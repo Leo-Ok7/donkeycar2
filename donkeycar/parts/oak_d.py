@@ -72,7 +72,7 @@ class OakD(object):
                 self.setup_depth_camera(WIDTH, HEIGHT)
 
             if self.enable_rgb:
-                self.setup_rgb_camera(WIDTH, HEIGHT)
+                self.setup_rgb_camera(self.width, self.height)
 
             self.oak_d_device = depthai.Device(self.pipeline, device_info)
 
@@ -138,14 +138,23 @@ class OakD(object):
         res = depthai.ColorCameraProperties.SensorResolution.THE_1080_P
 
         cam_rgb.setResolution(res)
-        # Set preview size to match model input
-        cam_rgb.setPreviewSize(self.image_w, self.image_h)
+        # Preview size is what makes the DEVICE do the downscale -- the Pi
+        # never touches full-resolution frames.
+        cam_rgb.setPreviewSize(width, height)
         cam_rgb.setInterleaved(False)
+        # ColorCamera's default color order is BGR. Every other camera Part
+        # in this codebase hands cam/image_array to the rest of the pipeline
+        # as RGB (see camera.py CSICamera's explicit COLOR_BGR2RGB), so make
+        # the device itself emit RGB instead of relying on a conversion here.
+        cam_rgb.setColorOrder(depthai.ColorCameraProperties.ColorOrder.RGB)
 
         xout_rgb = self.pipeline.create(depthai.node.XLinkOut)
         xout_rgb.setStreamName("rgb")
 
-        cam_rgb.video.link(xout_rgb.input)
+        # `.preview` (not `.video`) is the stream that actually respects
+        # setPreviewSize(); `.video` ignores it and outputs at full
+        # sensor/ISP resolution.
+        cam_rgb.preview.link(xout_rgb.input)
 
     def get_mono_camera(self, pipeline: Pipeline, is_left: bool):
         # Configure mono camera
@@ -301,7 +310,7 @@ if __name__ == "__main__":
 
     camera = None
     try:
-        camera = OakDLite(
+        camera = OakD(
             width=width,
             height=height,
             enable_rgb=enable_rgb,

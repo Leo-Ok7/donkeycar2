@@ -30,7 +30,7 @@ MAX_LOOPS = None        # the vehicle loop can abort after this many iterations,
 #
 # CAMERA configuration
 #
-CAMERA_TYPE = "PICAM"   # (PICAM|WEBCAM|CVCAM|CSIC|V4L|D435|MOCK|IMAGE_LIST)
+CAMERA_TYPE = "PICAM"   # (PICAM|WEBCAM|CVCAM|CSIC|V4L|D435|OAKD|MOCK|IMAGE_LIST)
 IMAGE_W = 320
 IMAGE_H = 240
 IMAGE_DEPTH = 3         # default RGB=3, make 1 for mono
@@ -612,4 +612,68 @@ INC_PID_D_BTN = None            # button to change PID 'D' constant by PID_D_DEL
 DEC_PID_D_BTN = None            # button to change PID 'D' constant by -PID_D_DELTA
 INC_PID_P_BTN = "R2"            # button to change PID 'P' constant by PID_P_DELTA
 DEC_PID_P_BTN = "L2"            # button to change PID 'P' constant by -PID_P_DELTA
+
+#
+# CenterLineFollower - classical-CV follower for intermittent greenish-blue
+# center tape (white tape marks the track boundary, used by lane-following
+# later, not by this Part). See donkeycar/parts/center_line_follower.py and
+# the companion center_line_follower.md for the full pipeline write-up.
+# None of these are required here -- CenterLineFollower falls back to the
+# DEFAULT_* constants at the top of its own file if a name below isn't set.
+# To actually drive with this Part instead of the stock LineFollower, also
+# set in myconfig.py:
+#   CV_CONTROLLER_MODULE = "donkeycar.parts.center_line_follower"
+#   CV_CONTROLLER_CLASS = "CenterLineFollower"
+# NOTE: PID_P/PID_I/PID_D above must stay defined even when using
+# CenterLineFollower -- cv_control.py constructs a PID from them
+# unconditionally before the CV controller is even selected.  CenterLineFollower
+# itself ignores that PID object and implements its own steering control below.
+#
+
+# CenterLineFollower - region of interest (a tall horizontal band, not a thin
+# slice, so a dash fragment is likely to intersect it even with gaps in the tape)
+CENTER_LINE_ROI_Y_TOP = 130      # top row (pixels from image top) of the scan band
+CENTER_LINE_ROI_Y_BOTTOM = 230   # bottom row; kept short of IMAGE_H to avoid the chassis/bumper
+
+# CenterLineFollower - HSV color threshold for the greenish-blue/teal tape
+# (opencv HSV hue value is 0..179, saturation and value are both 0..255).
+# Saturation (the 2nd number) is what actually separates the tape from the
+# low-saturation white boundary tape/track floor -- raise it first if the
+# mask is picking up white. Retune both of these before anything else when
+# moving from sim to the real camera.
+CENTER_LINE_COLOR_LOW = (75, 80, 40)
+CENTER_LINE_COLOR_HIGH = (105, 255, 255)
+
+# CenterLineFollower - morphological cleanup (open then close) kernel size, in px
+CENTER_LINE_MORPH_KERNEL = 5
+
+# CenterLineFollower - reject contours smaller than this fraction of the ROI area
+CENTER_LINE_MIN_AREA_FRACTION = 0.005
+
+# CenterLineFollower - target horizontal pixel for the tape centroid.
+# None means "use the geometric center of the frame" (width // 2) -- the
+# correct default for a *center*-line follower. Override only if the camera
+# isn't physically centered on the car.
+CENTER_LINE_TARGET_PIXEL = None
+
+# CenterLineFollower - steering control (proportional + optional derivative
+# on normalized error, roughly -1..1). Start by tuning STEER_KP alone with
+# STEER_KD at 0; see center_line_follower.md for the full tuning procedure.
+CENTER_LINE_STEER_KP = 0.8
+CENTER_LINE_STEER_KD = 0.0
+CENTER_LINE_ERROR_SMOOTHING_ALPHA = 0.5   # lower = smoother but more lag, higher = more jagged but faster
+
+# CenterLineFollower - throttle. Strictly constant while tracking; only
+# drops during an extended tape loss (see the gap-timing group below).
+CENTER_LINE_THROTTLE = 0.2          # always re-tune per-vehicle; start low on the real car
+CENTER_LINE_THROTTLE_LOST_MIN = 0.0 # throttle floor once LOST_TIME_SEC has elapsed
+
+# CenterLineFollower - how long to tolerate the tape being undetected before
+# reacting. A brief HOLD (tape still expected, e.g. a dash gap) keeps
+# steering and throttle unchanged; past LOST_TIME_SEC the car ramps throttle
+# down to CENTER_LINE_THROTTLE_LOST_MIN and stops steering-blind. Measure
+# your track's longest dash gap and set these relative to how long it takes
+# to cross it at CENTER_LINE_THROTTLE.
+CENTER_LINE_HOLD_TIME_SEC = 0.5
+CENTER_LINE_LOST_TIME_SEC = 2.0
 
