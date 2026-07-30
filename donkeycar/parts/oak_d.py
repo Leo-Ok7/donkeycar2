@@ -187,8 +187,21 @@ class OakD(object):
     def get_frame(self, queue: DataOutputQueue):
         # Get frame from queue
         new_frame: ImgFrame = queue.get()
-        # Convert to OpenCV format
-        return new_frame.getCvFrame()
+        # getCvFrame() ALWAYS returns BGR interleaved, regardless of the
+        # setColorOrder(...RGB) call in setup_rgb_camera() -- confirmed in
+        # Luxonis's own ImgFrame docs, and empirically here: real orange
+        # objects came through blue and magenta came through purple, while
+        # green (unaffected by an R/B swap) looked correct. The comment up
+        # there claiming the device emits RGB "instead of relying on a
+        # conversion here" is simply wrong, so downstream code that assumes
+        # cam/image_array is RGB (every COLOR_RGB2HSV in this codebase) was
+        # silently working on red/blue-swapped pixels.
+        if new_frame is None:
+            return None
+        frame = new_frame.getCvFrame()
+        if frame is None or frame.ndim != 3 or frame.shape[2] != 3:
+            return frame          # depth/mono frames pass through untouched
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     def _poll(self):
         last_time = self.frame_time
@@ -198,20 +211,25 @@ class OakD(object):
         #
         # convert camera frames to images
         #
-        if self.enable_rgb or self.enable_depth:
-
+        # Fetch each stream's queue ONLY if that stream was actually created in
+        # the pipeline. The old code requested BOTH queues whenever either was
+        # enabled, so running with OAKD_DEPTH=False (depth stream never built)
+        # killed this thread on the first poll with:
+        #   RuntimeError: Queue for stream name 'depth' doesn't exist
+        # which froze the camera silently -- the vehicle loop kept running on a
+        # stale/None frame. Guarding them separately lets RGB-only work, so
+        # OAKD_DEPTH can stay False and the tub schema stays RGB-only.
+        if self.enable_depth:
             self.depth_queue: DataOutputQueue = self.oak_d_device.getOutputQueue(
                 name="depth", maxSize=1, blocking=False
             )
+            self.depth_image = self.get_frame(self.depth_queue)
+
+        if self.enable_rgb:
             self.rgb_queue: DataOutputQueue = self.oak_d_device.getOutputQueue(
                 "rgb", maxSize=1, blocking=False
             )
-
-            depth_frame = self.get_frame(self.depth_queue)
-            rgb_frame = self.get_frame(self.rgb_queue)
-
-            self.depth_image = depth_frame
-            self.color_image = rgb_frame
+            self.color_image = self.get_frame(self.rgb_queue)
 
         if self.resize:
             if self.width != WIDTH or self.height != HEIGHT:

@@ -124,6 +124,17 @@ DEFAULT_CONFIRM_FRAMES = 3
 DEFAULT_HALF_LANE_WIDTH_PX = 150
 DEFAULT_HALF_LANE_WIDTH_SMOOTHING = 0.2
 
+# Where in the dash->edge span to aim, in half-lane (LEFT/RIGHT) mode:
+#   0.0 = ride directly on the center dash
+#   0.5 = midway between dash and edge (the original half-lane behavior)
+#   1.0 = ride on the outer white edge
+# Lower values "hug" the dash. That matters on corners: the dash is what
+# tracking depends on, and the further the car sits from it the sooner it
+# swings out of the ROI mid-turn -- at which point steering falls back to
+# the width estimate and drifts. Hugging trades some lane centering for
+# keeping the thing being tracked inside the frame.
+DEFAULT_DASH_HUG = 0.5
+
 DEFAULT_TARGET_PIXEL = None  # None => geometric center of the frame
 
 DEFAULT_STEER_KP = 0.8
@@ -221,6 +232,11 @@ class CenterLineFollower:
         self.half_lane_width_px = getattr(cfg, 'CENTER_LINE_HALF_LANE_WIDTH_PX', DEFAULT_HALF_LANE_WIDTH_PX)
         self.half_lane_width_smoothing = getattr(
             cfg, 'CENTER_LINE_HALF_LANE_WIDTH_SMOOTHING', DEFAULT_HALF_LANE_WIDTH_SMOOTHING)
+        # How closely to hug the center dash vs. sit mid-lane (see
+        # DEFAULT_DASH_HUG and _resolve_track_point()). Clamped so a bad
+        # config value can't push the target outside the lane entirely.
+        self.dash_hug = clamp(
+            float(getattr(cfg, 'CENTER_LINE_DASH_HUG', DEFAULT_DASH_HUG)), 0.0, 1.0)
 
         # --- Tracking continuity (see _find_blob()) ---
         self.max_track_jump_px = getattr(cfg, 'CENTER_LINE_MAX_TRACK_JUMP_PX', DEFAULT_MAX_TRACK_JUMP_PX)
@@ -454,12 +470,22 @@ class CenterLineFollower:
             solid edge is continuous, so it can carry tracking through
             every gap in the dashed center line, not just short ones.
         """
+        # dash_hug is where in the dash->edge span the car aims:
+        #   0.0 = sit right on the dash, 0.5 = lane midpoint (original
+        #   behavior), 1.0 = sit on the outer edge.
+        # Hugging the dash keeps it nearer the middle of the frame, so it
+        # stays in view further into a turn instead of sliding out of the
+        # ROI and dropping tracking mid-corner.
+        hug = self.dash_hug
+
         if dash_found is not None and edge_found is not None:
             dash_cx, dash_cy, _ = dash_found
             edge_cx, edge_cy, _ = edge_found
             width_px = abs(edge_cx - dash_cx)
             self.half_lane_width_px += self.half_lane_width_smoothing * (width_px - self.half_lane_width_px)
-            track_x = (dash_cx + edge_cx) / 2.0
+            # Interpolate from the dash toward the edge; signed difference
+            # handles the edge being on either side without a sign term.
+            track_x = dash_cx + hug * (edge_cx - dash_cx)
             return track_x, track_x, (dash_cy + edge_cy) / 2.0
 
         if dash_found is not None:
@@ -467,12 +493,14 @@ class CenterLineFollower:
             if self.lane_mode == LaneMode.CENTER:
                 return dash_cx, dash_cx, dash_cy
             sign = 1.0 if self.lane_mode == LaneMode.RIGHT else -1.0
-            track_x = dash_cx + sign * self.half_lane_width_px / 2.0
+            track_x = dash_cx + sign * hug * self.half_lane_width_px
             return track_x, dash_cx, dash_cy
 
         edge_cx, edge_cy, _ = edge_found
+        # Coming from the edge instead, the target sits (1 - hug) of the
+        # span back toward where the dash should be.
         sign = -1.0 if self.lane_mode == LaneMode.RIGHT else 1.0
-        track_x = edge_cx + sign * self.half_lane_width_px / 2.0
+        track_x = edge_cx + sign * (1.0 - hug) * self.half_lane_width_px
         return track_x, edge_cx, edge_cy
 
     def _steer_towards(self, cx, width):
@@ -559,6 +587,19 @@ class CenterLineFollower:
         if self.lane_mode != LaneMode.CENTER:
             edge_mask = self._clean_mask(self._make_edge_mask(roi))
             side = 'left' if self.lane_mode == LaneMode.LEFT else 'right'
+            # Blank the half we are not tracking. _find_edge() already limits
+            # its SEARCH to `side` via x_range, but the mask itself stayed
+            # full-width and the debug overlay ORs it in -- so bright
+            # pavement on the far side still showed up tinted and looked
+            # like the edge detector was chasing it. Zeroing it keeps the
+            # overlay honest about what can actually influence steering, and
+            # guarantees the far side contributes nothing even if the search
+            # window is ever widened.
+            mid = width // 2
+            if side == 'right':
+                edge_mask[:, :mid] = 0
+            else:
+                edge_mask[:, mid:] = 0
             edge_found_raw = self._find_edge(edge_mask, side, width)
             edge_found = self._confirm(edge_found_raw, 'last_edge_cx', 'pending_edge_cx', 'pending_edge_count')
             if edge_found is not None:
