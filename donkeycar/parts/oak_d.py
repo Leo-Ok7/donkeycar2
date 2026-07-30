@@ -181,6 +181,29 @@ class OakD(object):
                 self.pipeline = None
                 continue
 
+            # Opening the device is NOT enough to prove the mode is usable: the
+            # ISP size setIspScale() lands on can be one getCvFrame() cannot
+            # convert. THE_12_MP @ 1/6 on this hardware yields 676x507, and the
+            # odd height fails NV12->BGR:
+            #   (-215:Assertion failed) sz.width % 2 == 0 && sz.height % 3 == 0
+            # That threw in the camera THREAD on the first frame, long after
+            # this function had already reported success -- so the candidate has
+            # to be validated by actually converting a frame here, while we can
+            # still fall through to the next one.
+            usable, why = self._validate_rgb_capture()
+            if not usable:
+                failures.append(
+                    f"  {resolution} @ {scale_num}/{scale_den}: opened but "
+                    f"unusable ({why})"
+                )
+                try:
+                    self.oak_d_device.close()
+                except Exception:
+                    pass
+                self.oak_d_device = None
+                self.pipeline = None
+                continue
+
             logger.info(
                 f"OAK-D capturing at {resolution} with ISP scale "
                 f"{scale_num}/{scale_den}, delivered as {self.width}x{self.height}"
@@ -191,6 +214,44 @@ class OakD(object):
             "Could not open the OAK-D with any known full-FOV capture mode.\n"
             "Tried:\n" + "\n".join(failures)
         )
+
+    def _validate_rgb_capture(self, timeout_s=8.0):
+        """
+        Pull one real RGB frame and convert it, to prove the chosen capture mode
+        actually works end to end.
+
+        Returns (True, "") if a frame arrived and getCvFrame() succeeded, else
+        (False, reason). Never raises -- a candidate that fails here is just
+        rejected so _open_device() can try the next one.
+        """
+        try:
+            queue = self.oak_d_device.getOutputQueue(
+                "rgb", maxSize=1, blocking=False
+            )
+        except Exception as error:
+            return False, f"no rgb queue: {error}"
+
+        deadline = time.time() + timeout_s
+        frame = None
+        while time.time() < deadline:
+            try:
+                frame = queue.tryGet()
+            except Exception as error:
+                return False, f"queue read failed: {error}"
+            if frame is not None:
+                break
+            time.sleep(0.02)
+
+        if frame is None:
+            return False, f"no frame within {timeout_s:.0f}s"
+
+        size = f"{frame.getWidth()}x{frame.getHeight()}"
+        try:
+            frame.getCvFrame()
+        except Exception as error:
+            # Most likely an ISP size NV12->BGR cannot handle (odd height).
+            return False, f"ISP {size}, getCvFrame failed: {str(error)[:80]}"
+        return True, ""
 
     def setup_depth_camera(self):
         # Set up left and right cameras

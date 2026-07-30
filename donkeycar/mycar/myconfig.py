@@ -30,8 +30,40 @@ OAKD_DEPTH = False  # stereo depth -> 'cam/depth_array'; unused by line
                     # on the Pi. OakD._poll() only reads a queue when its
                     # feature is enabled, so this is safe to turn off.
 OAKD_ID = None      # serial number, or None to auto-detect the only device
-# """ 
-# My CAR CONFIG 
+
+# ---------------------------------------------------------------------------
+# THIS CAR'S HARDWARE (ucsdrobocar-DSC-T10)
+# Without these, config.py's defaults win -- DRIVE_TRAIN_TYPE would be
+# "PWM_STEERING_THROTTLE" (no VESC at all) and CONTROLLER_TYPE would be 'xbox',
+# so neither the drivetrain nor the gamepad would work.
+# ---------------------------------------------------------------------------
+DRIVE_TRAIN_TYPE = "VESC"
+# Stable by-id path: /dev/ttyACM* renumbers depending on whether the VESC or
+# the OAK-D enumerates first, so the raw device name is not reliable here.
+VESC_SERIAL_PORT = "/dev/serial/by-id/usb-STMicroelectronics_ChibiOS_RT_Virtual_COM_Port_304-if00"
+VESC_MAX_SPEED_PERCENT = .35
+VESC_HAS_SENSOR = True
+VESC_START_HEARTBEAT = True
+VESC_BAUDRATE = 115200
+VESC_TIMEOUT = 0.05
+VESC_STEERING_SCALE = 0.5    # maps angle -1..1 -> servo 0..1
+VESC_STEERING_OFFSET = 0.5   # (angle * scale) + offset
+
+# Logitech F710 gamepad. CONTROLLER_TYPE must be 'F710' so the
+# LogitechJoystick axis map is used (left_stick_horz -> steering,
+# right_stick_vert -> throttle); the default 'xbox' map does not match.
+USE_JOYSTICK_AS_DEFAULT = True
+CONTROLLER_TYPE = 'F710'
+JOYSTICK_DEVICE_FILE = "/dev/input/js0"
+JOYSTICK_MAX_THROTTLE = 0.35
+JOYSTICK_STEERING_SCALE = 0.75
+JOYSTICK_THROTTLE_DIR = -1.0   # -1.0 so pushing the stick up drives forward
+JOYSTICK_DEADZONE = 0.01
+AUTO_RECORD_ON_THROTTLE = True
+USE_NETWORKED_JS = False
+NETWORK_JS_SERVER_IP = None
+# """
+# My CAR CONFIG
 
 # This file is read by your car application's manage.py script to change the car
 # performance
