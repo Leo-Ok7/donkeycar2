@@ -83,6 +83,11 @@ DEFAULT_MIN_SOLIDITY = 0.85
 DEFAULT_EDGE_TOPHAT_KERNEL_SIZE = 21   # must be notably wider than the ~1-4px tape line, but smaller than the scale lighting varies over
 DEFAULT_EDGE_CONTRAST_THRESHOLD = 30   # margin below the measured ~55-60 real contrast, above the ~0 seen on plain floor
 DEFAULT_EDGE_MIN_AREA_FRACTION = 0.003
+# Minimum share of the ROI's HEIGHT a blob must span to count as the solid
+# lane-boundary edge. The boundary recedes from the camera so it crosses the
+# whole ROI top-to-bottom; shadows lie across the path and cover only a band.
+# Measured here: real edge 0.97 of ROI height, dappled shadows 0.27-0.46.
+DEFAULT_EDGE_MIN_HEIGHT_FRACTION = 0.60
 
 # Tracking continuity: real tape moves smoothly frame-to-frame as the car
 # drives; a spurious background match (a rock, a glint, a piece of
@@ -227,6 +232,9 @@ class CenterLineFollower:
         self.edge_tophat_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_edge, k_edge))
         self.edge_contrast_threshold = getattr(cfg, 'CENTER_LINE_EDGE_CONTRAST_THRESHOLD', DEFAULT_EDGE_CONTRAST_THRESHOLD)
         self.edge_min_area_fraction = getattr(cfg, 'CENTER_LINE_EDGE_MIN_AREA_FRACTION', DEFAULT_EDGE_MIN_AREA_FRACTION)
+        self.edge_min_height_fraction = clamp(float(getattr(
+            cfg, 'CENTER_LINE_EDGE_MIN_HEIGHT_FRACTION',
+            DEFAULT_EDGE_MIN_HEIGHT_FRACTION)), 0.0, 1.0)
 
         # --- Half-lane width estimate (dash-to-edge pixel distance) ---
         self.half_lane_width_px = getattr(cfg, 'CENTER_LINE_HALF_LANE_WIDTH_PX', DEFAULT_HALF_LANE_WIDTH_PX)
@@ -324,7 +332,8 @@ class CenterLineFollower:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.morph_kernel)
         return mask
 
-    def _find_blob(self, mask, min_area_fraction, x_range=None, last_known_cx=None):
+    def _find_blob(self, mask, min_area_fraction, x_range=None, last_known_cx=None,
+                   min_height_fraction=0.0):
         """
         Returns (cx, cy, confidence) in ROI-local coordinates (cx is also
         full-frame-x, since the ROI spans the full image width) for
@@ -354,6 +363,20 @@ class CenterLineFollower:
             if area < min_area_px:
                 continue
             _, _, bw, bh = cv2.boundingRect(c)
+            # Vertical-span gate. A lane boundary runs AWAY from the camera,
+            # so in the ROI it stretches from bottom to top; a shadow cast
+            # ACROSS the path is a horizontal band that covers only a slice
+            # of the ROI's height. Measured on real frames from this track:
+            #     real white edge : bbox height = 0.97 of the ROI height
+            #     dappled shadows : 0.46, 0.41, 0.30, 0.27
+            # This is the only reliable separator found -- top-hat contrast
+            # cannot do it (shadows measured HIGHER contrast than tape, max
+            # 143 vs ~102, and are brighter: V 201 vs 171), and elongation
+            # cannot either (tape 7.7 vs shadows 5.8-11.1, fully overlapping).
+            # Only applied where a caller asks for it (the edge search); the
+            # dashed center line is short by design and must not be gated.
+            if min_height_fraction > 0.0 and bh < min_height_fraction * mask.shape[0]:
+                continue
             if bw * bh > 0 and area / (bw * bh) > self.max_fill_ratio:
                 continue  # too blob-like to be a thin tape stripe
             hull_area = cv2.contourArea(cv2.convexHull(c))
@@ -386,7 +409,9 @@ class CenterLineFollower:
         the near edge."""
         mid = width // 2
         x_range = (0, mid) if side == 'left' else (mid, width)
-        return self._find_blob(mask, self.edge_min_area_fraction, x_range=x_range, last_known_cx=self.last_edge_cx)
+        return self._find_blob(mask, self.edge_min_area_fraction, x_range=x_range,
+                               last_known_cx=self.last_edge_cx,
+                               min_height_fraction=self.edge_min_height_fraction)
 
     def _confirm(self, found, confirmed_cx_attr, pending_cx_attr, pending_count_attr):
         """
