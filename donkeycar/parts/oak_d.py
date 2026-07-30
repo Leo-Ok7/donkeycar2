@@ -79,10 +79,13 @@ class OakD(object):
         enable_rgb=True,
         enable_depth=True,
         device_id=None,
+        exposure_compensation=0,
     ):
         self.device_id = device_id  # "18443010C1E4681200" # serial number of device to use|None to use default|"list" to list devices and exit
         self.enable_rgb = enable_rgb
         self.enable_depth = enable_depth
+        # Auto-exposure bias; see setup_rgb_camera(). 0 = leave depthai alone.
+        self.exposure_compensation = exposure_compensation
 
         # target output size; frames are resized to this in _poll()
         self.width = width
@@ -277,6 +280,33 @@ class OakD(object):
         cam_rgb.setResolution(resolution)
         cam_rgb.setIspScale(scale_numerator, scale_denominator)
         cam_rgb.setFps(CAMERA_FPS)
+
+        # Auto-exposure bias. Default 0 leaves depthai's behavior untouched.
+        #
+        # Why this exists: auto-exposure meters for the whole frame, and on
+        # bright sunlit pavement it drives the image to the top of the range.
+        # Measured on a real sunlit frame here: mean brightness 230/255 with
+        # HALF the pixels (49.8%) clipped at pure white. Clipped pixels have
+        # no color left -- saturation collapses toward 0 -- so yellow tape
+        # washes out to white and fails any saturation floor downstream, with
+        # no error to explain it.
+        #
+        # Negative values bias the exposure darker. Measured on this camera:
+        #     comp   mean   clipped>250   mean saturation
+        #      0     127       4.0%           37.8
+        #     -2      89       0.4%           50.2
+        #     -4      54       0.0%           60.7
+        #     -6      34       0.0%           67.1
+        # Saturation -- the thing color thresholding depends on -- improves
+        # substantially. But the right value is scene-dependent (the same
+        # comp=0 gave 4% clipping in shade and 50% in direct sun), so this
+        # stays opt-in rather than being given a nonzero default, and it
+        # should be chosen against frames that actually contain the tape.
+        if self.exposure_compensation:
+            cam_rgb.initialControl.setAutoExposureCompensation(
+                int(self.exposure_compensation))
+            logger.info("OAK-D auto-exposure compensation: %+d",
+                        int(self.exposure_compensation))
 
         xout_rgb = self.pipeline.create(depthai.node.XLinkOut)
         xout_rgb.setStreamName("rgb")

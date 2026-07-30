@@ -1,6 +1,13 @@
 CV_CONTROLLER_MODULE = "donkeycar.parts.lane_following.controller"
 CV_CONTROLLER_CLASS = "LaneFollowingController"
-START_MODE = "line"
+# "lane" = drive inside a chosen lane (boundaries + divider); "line" = follow
+# the centre tape only. START_LANE picks which side in lane mode.
+START_MODE = "lane"
+START_LANE = "left"
+# Serves the MODE / LANE / DEBUG toggle page. 8887 is the stock driving page,
+# so this gets its own port.
+LANE_WEB_ENABLE = True
+LANE_WEB_PORT = 8891
 
 #
 # CAMERA: Luxonis OAK-D (USB / DepthAI), not the Pi CSI camera.
