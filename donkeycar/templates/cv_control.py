@@ -108,6 +108,22 @@ def drive(cfg, use_joystick=False, camera_type='single', meta=[]):
                       cfg.CV_CONTROLLER_OUTPUTS,
                       cfg.CV_CONTROLLER_CONDITION)
 
+    #
+    # Line/lane following mode + lane toggle page (see docs/lane_following.md).
+    #
+    # Off unless LANE_WEB_ENABLE is set, so this cannot affect a stock car.
+    # Runs threaded, so the tornado loop never blocks the vehicle loop, and it
+    # takes its frame from cv/image_array -- the CV part's existing output --
+    # rather than opening a second camera handle.
+    #
+    if getattr(cfg, 'LANE_WEB_ENABLE', False):
+        from donkeycar.parts.lane_following.web import LaneFollowingWebServer
+        from donkeycar.parts.lane_following.params import Params
+        V.add(LaneFollowingWebServer(port=getattr(cfg, 'LANE_WEB_PORT', 8891),
+                                     params=Params(cfg)),
+              inputs=['cv/image_array'],
+              threaded=True)
+
     recording_control = ToggleRecording(cfg.AUTO_RECORD_ON_THROTTLE, cfg.RECORD_DURING_AI)
     V.add(recording_control, inputs=['user/mode', "recording"], outputs=["recording"])
 

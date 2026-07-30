@@ -81,3 +81,58 @@ V.start(rate_hz=10)
 
 See [home page](http://donkeycar.com), [docs](http://docs.donkeycar.com)
 or join the [Discord server](http://www.donkeycar.com/community.html) to learn more.
+
+## Line following and lane following (this branch)
+
+Classical-CV line following and lane following for a DonkeyCar with a Luxonis
+OAK-D camera. No neural nets, no training, no simulator — everything is tuned
+through named config constants at the track.
+
+**Start here: [docs/lane_following.md](docs/lane_following.md)** for the concepts,
+the camera patch, run instructions and the tuning guide.
+
+### Quick reference
+
+```bash
+# Re-apply the OAK-D full-FOV camera patch (needed after any environment rebuild)
+~/env/bin/python scripts/patch_oak_d.py
+
+# Confirm the camera streams 426x240 with the recovered field of view,
+# and settle whether frames are BGR or RGB
+python scripts/oakd_color_check.py
+
+# Prove manage.py still launches and stays manually drivable, without hardware
+python scripts/preflight_lane_following.py --controller LaneFollowingController --web
+
+# Check the CV logic (foliage rejection, plausibility gate, lost-line states)
+pytest tests/test_lane_following.py tests/test_lane_following_web.py
+
+# Confirm line following has not regressed
+python scripts/replay_frames.py --check tests/data/line_golden.json
+
+# Drive
+python manage.py drive
+#   http://<hostname>.local:8887  donkeycar page - engage autopilot ("local") here
+#   http://<hostname>.local:8891  toggle page - MODE, LANE, DEBUG  (LANE_WEB_ENABLE=True)
+```
+
+### If foliage leaks into the yellow mask
+
+Tune in this order (all in `donkeycar/parts/lane_following/params.py`, overridable
+in `myconfig.py`):
+
+1. **lower** `YELLOW_HSV_HIGH`'s hue ceiling (default `33` — foliage green starts ~40)
+2. **raise** `YELLOW_HSV_LOW`'s saturation floor (default `110` — foliage is pale)
+3. **raise** `ROI_TOP_FRAC` (default `0.55`) to crop more horizon away
+
+### Layout
+
+| Path | Purpose |
+|---|---|
+| `donkeycar/parts/lane_following/params.py` | every tunable, in one labeled block |
+| `donkeycar/parts/lane_following/vision.py` | ROI, HSV masking, blob filtering (foliage defenses 1–3) |
+| `donkeycar/parts/lane_following/control.py` | plausibility gate, steering, hold-heading (defenses 4–5) |
+| `donkeycar/parts/lane_following/strategies.py` | line following, lane following, lane model |
+| `donkeycar/parts/lane_following/controller.py` | the donkeycar Part and mode switching |
+| `donkeycar/parts/lane_following/web.py` | the mode/lane toggle page |
+| `donkeycar/parts/lane_following/overlay.py` | the debug overlay |

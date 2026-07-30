@@ -30,8 +30,8 @@ MAX_LOOPS = None        # the vehicle loop can abort after this many iterations,
 #
 # CAMERA configuration
 #
-CAMERA_TYPE = "PICAM"   # (PICAM|WEBCAM|CVCAM|CSIC|V4L|D435|MOCK|IMAGE_LIST)
-IMAGE_W = 320
+CAMERA_TYPE = "OAKD"    # (PICAM|WEBCAM|CVCAM|CSIC|V4L|D435|OAKD|MOCK|IMAGE_LIST)
+IMAGE_W = 426
 IMAGE_H = 240
 IMAGE_DEPTH = 3         # default RGB=3, make 1 for mono
 CAMERA_FRAMERATE = DRIVE_LOOP_HZ
@@ -44,6 +44,16 @@ BGR2RGB = False  # true to convert from BRG format to RGB format; requires openc
 
 # For IMAGE_LIST camera
 PATH_MASK = "~/mycar/data/tub_1_20-03-12/*.jpg"
+
+#
+# Luxonis OAK-D camera
+# NOTE: these keys are REQUIRED when CAMERA_TYPE is "OAKD". add_camera() reads
+# them directly, so a missing key is an AttributeError at launch.
+#
+OAKD_RGB = True     # True to capture RGB image
+OAKD_DEPTH = False  # depth is unused by line/lane following and costs Pi CPU
+                    # and USB bandwidth, so it is off. See docs/lane_following.md
+OAKD_ID = None      # serial number of camera, or None to auto-detect
 
 
 #
@@ -553,8 +563,16 @@ FPS_DEBUG_INTERVAL = 10    # the interval in seconds for printing the frequency 
 # computer vision template
 #
 # configure which part is used as the autopilot - change to use your own autopilot
-CV_CONTROLLER_MODULE = "donkeycar.parts.line_follower"
-CV_CONTROLLER_CLASS = "LineFollower"
+#
+# Line/lane following (this branch) -- see docs/lane_following.md
+#   PassThroughController   step 1: outputs zeros, proves the wiring is safe
+#   LaneFollowingController step 2+: the real line/lane following pipeline
+CV_CONTROLLER_MODULE = "donkeycar.parts.lane_following.controller"
+CV_CONTROLLER_CLASS = "PassThroughController"
+#
+# The stock donkeycar CV autopilot, for reference:
+#   CV_CONTROLLER_MODULE = "donkeycar.parts.line_follower"
+#   CV_CONTROLLER_CLASS = "LineFollower"
 CV_CONTROLLER_INPUTS = ['cam/image_array']
 CV_CONTROLLER_OUTPUTS = ['pilot/steering', 'pilot/throttle', 'cv/image_array']
 CV_CONTROLLER_CONDITION = "run_pilot"
@@ -612,4 +630,28 @@ INC_PID_D_BTN = None            # button to change PID 'D' constant by PID_D_DEL
 DEC_PID_D_BTN = None            # button to change PID 'D' constant by -PID_D_DELTA
 INC_PID_P_BTN = "R2"            # button to change PID 'P' constant by PID_P_DELTA
 DEC_PID_P_BTN = "L2"            # button to change PID 'P' constant by -PID_P_DELTA
+
+
+#
+# LINE / LANE FOLLOWING (this branch) - see docs/lane_following.md
+#
+# The full set of tunables, with comments explaining each one, lives in
+#   donkeycar/parts/lane_following/params.py
+# Any of those names can be overridden here or in myconfig.py using the exact
+# same name. Anything not mentioned uses the default from params.py, so this
+# section can never go stale in a way that breaks launch.
+#
+# The handful most likely to need changing at the track:
+#
+# CAMERA_COLOR_ORDER = "BGR"      # run scripts/oakd_color_check.py to confirm
+# YELLOW_HSV_HIGH = (33, 255, 255)  # LOWER the hue (33) first if foliage leaks in
+# YELLOW_HSV_LOW = (20, 110, 90)    # then RAISE the saturation floor (110)
+# ROI_TOP_FRAC = 0.55             # raise to crop more horizon/foliage away
+# STEERING_KP = 0.85              # raise for sharper steering; too high oscillates
+# THROTTLE_FORWARD = 0.18         # constant cruise throttle - start low
+# HALF_LANE_WIDTH_FRAC = 0.18     # lane mode: measure from a debug frame
+
+LANE_WEB_ENABLE = False  # True to serve the mode/lane toggle page (step 4)
+LANE_WEB_PORT = 8891     # the donkeycar web controller already uses 8887
+DEBUG_OVERLAY = False    # True to draw the CV masks and centroid on the feed
 
