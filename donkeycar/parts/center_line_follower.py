@@ -89,6 +89,13 @@ DEFAULT_EDGE_MIN_AREA_FRACTION = 0.003
 # Measured here: real edge 0.97 of ROI height, dappled shadows 0.27-0.46.
 DEFAULT_EDGE_MIN_HEIGHT_FRACTION = 0.60
 
+# Solidity floor for the boundary edge, kept separate from the dash's
+# DEFAULT_MIN_SOLIDITY. 0.0 disables it: a curved boundary measured 0.63,
+# well under the dash's 0.85, and shadows measured 0.50-0.80 -- so solidity
+# rejects real tape without excluding the thing it was meant to exclude.
+# Shadow rejection is handled by DEFAULT_EDGE_MIN_HEIGHT_FRACTION instead.
+DEFAULT_EDGE_MIN_SOLIDITY = 0.0
+
 # Tracking continuity: real tape moves smoothly frame-to-frame as the car
 # drives; a spurious background match (a rock, a glint, a piece of
 # architecture that happens to pass the color/contrast+shape gates) shows
@@ -232,6 +239,8 @@ class CenterLineFollower:
         self.edge_tophat_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_edge, k_edge))
         self.edge_contrast_threshold = getattr(cfg, 'CENTER_LINE_EDGE_CONTRAST_THRESHOLD', DEFAULT_EDGE_CONTRAST_THRESHOLD)
         self.edge_min_area_fraction = getattr(cfg, 'CENTER_LINE_EDGE_MIN_AREA_FRACTION', DEFAULT_EDGE_MIN_AREA_FRACTION)
+        self.edge_min_solidity = clamp(float(getattr(
+            cfg, 'CENTER_LINE_EDGE_MIN_SOLIDITY', DEFAULT_EDGE_MIN_SOLIDITY)), 0.0, 1.0)
         self.edge_min_height_fraction = clamp(float(getattr(
             cfg, 'CENTER_LINE_EDGE_MIN_HEIGHT_FRACTION',
             DEFAULT_EDGE_MIN_HEIGHT_FRACTION)), 0.0, 1.0)
@@ -333,7 +342,7 @@ class CenterLineFollower:
         return mask
 
     def _find_blob(self, mask, min_area_fraction, x_range=None, last_known_cx=None,
-                   min_height_fraction=0.0):
+                   min_height_fraction=0.0, min_solidity=None):
         """
         Returns (cx, cy, confidence) in ROI-local coordinates (cx is also
         full-frame-x, since the ROI spans the full image width) for
@@ -379,8 +388,19 @@ class CenterLineFollower:
                 continue
             if bw * bh > 0 and area / (bw * bh) > self.max_fill_ratio:
                 continue  # too blob-like to be a thin tape stripe
+            # Solidity floor, overridable per caller. The default (tuned for
+            # the center dash) is deliberately strict to reject scattered
+            # foliage. It must NOT be applied as-is to the boundary edge: a
+            # long CURVED line has low solidity by construction, since its
+            # convex hull is far larger than the curve itself. Measured on a
+            # real daytime frame the white edge scored 0.63 and was being
+            # thrown away by the dash's 0.85 floor at every threshold, which
+            # is why daytime edge detection failed completely. Solidity also
+            # cannot separate shadows here (they measured 0.50-0.80, straddling
+            # the edge's 0.63) -- the vertical-span gate does that instead.
+            solidity_floor = self.min_solidity if min_solidity is None else min_solidity
             hull_area = cv2.contourArea(cv2.convexHull(c))
-            if hull_area > 0 and area / hull_area < self.min_solidity:
+            if solidity_floor > 0.0 and hull_area > 0 and area / hull_area < solidity_floor:
                 continue  # too irregular/scattered to be a smooth tape stripe (likely foliage)
             M = cv2.moments(c)
             if M['m00'] == 0:
@@ -411,7 +431,8 @@ class CenterLineFollower:
         x_range = (0, mid) if side == 'left' else (mid, width)
         return self._find_blob(mask, self.edge_min_area_fraction, x_range=x_range,
                                last_known_cx=self.last_edge_cx,
-                               min_height_fraction=self.edge_min_height_fraction)
+                               min_height_fraction=self.edge_min_height_fraction,
+                               min_solidity=self.edge_min_solidity)
 
     def _confirm(self, found, confirmed_cx_attr, pending_cx_attr, pending_count_attr):
         """
