@@ -27,3 +27,8 @@ htmlcov/
 # PyTorch
 lightning_logs
 tb_logs
+
+# Recorded driving data (tub). This is 300MB+ of JPEGs per session and is
+# machine-specific; it must never land in the framework repo.
+donkeycar/mycar/data/
+mycar/data/

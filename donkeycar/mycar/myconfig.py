@@ -1,13 +1,181 @@
-CV_CONTROLLER_MODULE = "donkeycar.parts.lane_following.controller"
-CV_CONTROLLER_CLASS = "LaneFollowingController"
-# "lane" = drive inside a chosen lane (boundaries + divider); "line" = follow
-# the centre tape only. START_LANE picks which side in lane mode.
-START_MODE = "lane"
-START_LANE = "left"
-# Serves the MODE / LANE / DEBUG toggle page. 8887 is the stock driving page,
-# so this gets its own port.
-LANE_WEB_ENABLE = True
-LANE_WEB_PORT = 8891
+# Simple centre-line follower: one horizontal scan slice, centroid of the
+# yellow pixels, PID to keep that centroid at the middle of the frame.
+CV_CONTROLLER_MODULE = "donkeycar.parts.line_follower"
+CV_CONTROLLER_CLASS = "LineFollower"
+
+# --- LineFollower tuning, measured on real recorded frames from this track ---
+# Scan slice. The default SCAN_Y=100 samples rows 100-120, which on this
+# camera is the far field / horizon, not the ground the car is about to drive
+# over. Measured average yellow pixels per frame over 60 real tape frames:
+#     rows 100-120 : 108.8   <- old default
+#     rows 140-160 : 446.7   <- 4x more tape
+#     rows 160-180 :  50.8
+# BOTTOM HALF of the frame: rows 120-240 of a 240px image. A tall slice (not
+# a 20px sliver) means the dashed line is intersected somewhere in the band
+# almost all the time, instead of only when a dash happens to line up with one
+# thin row.
+# Look further ahead. Rows 120-240 is the near ground, effectively the
+# bumper: at 20Hz each correction is held 50ms, so at speed the car has
+# already driven past what it measured and every correction lands late,
+# overshoots, and gets reversed on the next frame. Rows 110-215 keeps most of
+# the near ground but adds ~10 rows of look-ahead. Push SCAN_Y lower (back
+# toward 120) if it starts losing the line on tight corners, where the tape
+# leaves the upper part of the frame first.
+SCAN_Y = 180
+SCAN_HEIGHT = 60
+
+# Ignore this many pixels down EACH side of the scan band. The gravel bed,
+# kerb and dry grass live at the frame edges and match the tape's hue closely
+# enough that no colour threshold separates them, while the line being
+# followed stays near the middle. 60px each side leaves the central 306 of
+# 426 columns (x 60..366). Reduce if the line is genuinely leaving that window
+# on sharp corners; raise if edge clutter still gets in.
+
+# Yellow band. The default (0,50,50)..(50,255,255) spans hue 0-50 -- red
+# through yellow-green -- at only S>=50, so sunlit concrete and the tan gravel
+# bed both fall inside it. Measured on the scan slice across 234 tape frames
+# and 2333 no-tape frames:
+#     S>=50  -> false-positive 30.9%
+#     S>=70  -> false-positive  8.9%
+#     S>=90  -> false-positive  0.0%   <- chosen
+#     S>=110 -> tape starts dropping out
+# Saturation floor 60 -> 40. Some of the tape on this track is PALE yellow,
+# and 60 clipped it: on a real pale-dash frame the mask caught only a 152px
+# sliver of the dash while the rest sat unmatched, versus 830px at a lower
+# floor. Measured over 1500 recent frames, detection 55.5% -> 61.0%, with no
+# change on the wall/no-tape reference frames. Kept at 40 rather than 30
+# because bare grey pavement piles up below ~20 and rises as the floor drops.
+# WORN TAPE. Some dashes on this track are faded/washed out, and their colour
+# is far weaker than fresh tape -- measured directly on a live frame, a worn
+# dash had saturation p50=19 (p90=33), so an S>=40 floor kept only 4.9% of it.
+# That is the tape that was being missed.
+#
+# Saturation alone cannot go that low safely: adjacent pavement runs S p90=11
+# but p99=32, which overlaps the worn tape. What separates them is BRIGHTNESS
+# -- the worn tape is still markedly lighter than the asphalt:
+#     worn dash : V p10=129  p50=176  p90=203
+#     pavement  : V p10=126  p50=142  p90=155
+# On that frame, S>=18 with V>=130 yields 54x more dash pixels than pavement
+# pixels, where S>=18 alone yields only 7.6x.
+# Measured over 1500 recent frames: detection 60.6% -> 68.3%, and the no-tape
+# reference frames stay clean.
+# V floor set to 155, and that floor is doing MORE than rejecting pavement --
+# it is what separates the tape from the WHITE BOUNDARY LINE. Saturation
+# cannot: measured on a live frame the white line and the worn dash have the
+# SAME saturation (both S p50=26), because below about S=30 hue is mostly
+# noise and grey/white pixels scatter randomly into the yellow hue range.
+# Brightness does separate them here -- the sunlit dash is markedly lighter
+# than the shaded boundary line:
+#     worn dash  : V p50=193
+#     white line : V p50=144
+#     V>=130 -> dash 169px vs white 78px  (2.2x -- white line leaks in and
+#               drags the centroid toward the track edge)
+#     V>=155 -> dash ~154px vs white ~5px (~30x)
+# Lower toward 130 if tape in deep shade is missed, but expect the white line
+# to start competing again; raise if it does.
+# REVERTED to S>=40, V>=80. I had dropped this to (15,18,155) to catch worn
+# tape, choosing the V floor to separate the white boundary line on ONE live
+# frame. Across 1200 recorded frames that was clearly worse -- it rejects
+# genuine tape wherever the tape is not brightly lit:
+#     S90 V80  -> detection 35.9%
+#     S60 V80  -> 56.9%
+#     S40 V80  -> 65.4%   <- best, and what is set
+#     S18 V155 -> 47.2%   <- the overfit value, worse than S40
+# Worn tape is still a real problem, but the fix cannot be a hard brightness
+# floor tuned on a single frame.
+COLOR_THRESHOLD_LOW = (15, 40, 80)
+COLOR_THRESHOLD_HIGH = (40, 255, 255)
+
+# Fraction of sampled pixels that must be yellow before steering at all.
+# This now genuinely gates (it used to be compared against a raw 0-255 sum, so
+# a single yellow pixel passed it); 0.010 = 1% of the 426x20 slice.
+# 0.002 = 0.2% of the sampled pixels. This MUST scale with SCAN_HEIGHT: the
+# same dash is a far smaller fraction of a 120-row slice than of a 20-row one.
+# Measured live on the bottom half with the line in view, only the nearest
+# dash matches and that is 0.40% of the band -- so a 1.0% gate suppressed
+# steering entirely even though the detection was correct.
+CONFIDENCE_THRESHOLD = 0.002
+
+# None => the image centre (213 of 426), so "centred" means centred in the
+# camera frame. Set a pixel value to deliberately ride offset from the line.
+SCAN_X_MARGIN = 60
+
+# --- Steering damping / speed compensation -------------------------------
+# Kd was -0.0001, only 1% of Kp -- essentially no damping, so the loop was
+# near-pure-proportional and oscillated once (gain x speed) got high enough.
+# The D term reacts to how fast the error is CHANGING, so it starts easing off
+# before the car reaches centre instead of driving into an overshoot.
+# Raise further if it still weaves; lower if it twitches on mask noise.
+# Kp lowered -0.01 -> -0.005. Measured over 1500 real frames with a correct
+# 50ms timestep, the old gain left steering PINNED AT FULL LOCK 53.5% of the
+# time -- that is the "wavy" feel: not gentle oscillation but slamming between
+# left and right lock. At -0.005 saturation drops to 10.6% while mean |steer|
+# stays 0.569, so it still has real authority:
+#     Kp        saturated   mean|steer|   reversals
+#     -0.010      53.5%        0.784         2.7%
+#     -0.006      35.5%        0.636         3.4%
+#     -0.005      10.6%        0.569         4.3%   <- chosen
+#     -0.004       8.9%        0.497         4.4%
+# (Reversals rise slightly because at high gain the signal sits pinned at one
+# extreme rather than crossing zero -- fewer sign changes, far worse driving.)
+PID_P = -0.005
+# Kd stays small. Raising it to -0.006 made things WORSE (reversals 2.7 -> 4.7%,
+# jump size doubled) because the derivative amplifies the frame-to-frame
+# centroid hops from dashes entering and leaving the scan band.
+PID_D = -0.002
+# Hold the LATERAL response constant across the speed range. A steering value
+# moves the car sideways by (steering x speed x time), so gains tuned at
+# THROTTLE_INITIAL=0.15 are ~2x too strong at THROTTLE_MAX=0.3. This divides
+# the PID output by the throttle ratio, and only ever softens (never
+# amplifies), so one set of gains works at every speed.
+STEERING_SPEED_SCALING = True
+STEERING_BASELINE_THROTTLE = 0.15
+
+# Exponential smoothing of the measured line position (1.0 = raw, no filter).
+# The centre line is DASHED and the scan band holds more than one dash, so
+# dashes entering/leaving the band shift the centroid even when the car is
+# going straight. Measured on real consecutive frames: median jump 4.8px but
+# p90 25px and worst 146px -- and a car cannot move 146px sideways in one
+# 50ms frame, so those are artefacts, each of which drove a real steering
+# correction.
+# Effect on steering activity over 3000 consecutive frames:
+#     alpha 1.00 (raw) -> |delta| p90 14.31, direction reversals 8.9%
+#     alpha 0.50       -> 6.63, 5.8%
+#     alpha 0.35       -> 4.41, 4.8%   <- chosen
+#     alpha 0.25       -> 2.87, 3.7%   (smoother, but ~200ms lag)
+# Lower = calmer but slower to react on corners; raise toward 1.0 if it starts
+# cutting corners or reacting late.
+LINE_SMOOTHING_ALPHA = 0.35
+
+TARGET_PIXEL = None
+# Deadband: no steering correction while the line is within this many pixels
+# of centre, so the car does not saw back and forth once it is lined up.
+# Widened 10 -> 20px. Halves the residual twitch (reversals 4.3% -> 3.3%) at
+# no cost to tracking, since 20px is under 5% of the frame width.
+TARGET_THRESHOLD = 20
+START_MODE = "line"
+
+# --- Seeing the CV masks in the web UI -------------------------------------
+# All three are needed; each fixes a different link in the chain.
+#
+DEBUG_OVERLAY = True         # 1. DRAW it. Without this the CV part returns the
+                             #    plain frame and there is nothing to show.
+                             #    Toggleable live from the page on 8891.
+OVERLAY_IMAGE = True         # 2. SHOW it on 8887 in AUTOPILOT mode. False makes
+                             #    UserPilotCondition show the raw camera instead.
+# OFF: this preview comes from the lane_following package and draws with
+# lane_following's OWN roi/colour params -- but the active controller is
+# LineFollower, which has its own SCAN_Y and COLOR_THRESHOLD. So in manual it
+# was reporting "blobs=0 area=0.00%" about a pipeline that is not driving,
+# which is worse than showing nothing. Switch to `local` to see the real
+# LineFollower overlay. Set back to True only if LaneFollowingController is
+# the active controller again.
+CV_PREVIEW_IN_MANUAL = False # 3. SHOW it on 8887 in MANUAL mode too, which is
+                             #    the mode the car starts in. The autopilot part
+                             #    is gated on run_pilot and does not run by hand,
+                             #    so a display-only part fills in; see
+                             #    donkeycar/parts/lane_following/preview.py.
+                             #    It has no steering output and cannot move the car.
 
 #
 # CAMERA: Luxonis OAK-D (USB / DepthAI), not the Pi CSI camera.
@@ -27,6 +195,12 @@ IMAGE_H = 240
 # Channel count (3 = colour). Unrelated to OAKD_DEPTH below, which is stereo
 # depth sensing.
 IMAGE_DEPTH = 3
+# Colour order is NOT configurable and does not need to be. depthai delivers
+# BGR, and OakD._to_rgb() converts it once in the camera part, so everything
+# from 'cam/image_array' onward -- the tub, both web feeds, training, and the
+# lane-following CV -- is RGB. Do not add a BGR2RGB part here; that would
+# convert it a second time and swap the colours right back.
+# Verify on the car with: python scripts/oakd_color_check.py
 
 # add_camera() reads all three of these when CAMERA_TYPE == "OAKD"; config.py
 # does not define them, so they must be set here or cfg lookup raises
@@ -641,7 +815,9 @@ NETWORK_JS_SERVER_IP = None
 #                       # If None, then detect the position yellow line at startup;
 #                       # so this assumes you have positioned the car prior to starting.
 #                       # Alternatively set this to IMAGE_W / 2 to follow middle line
-# TARGET_THRESHOLD = 10 # number of pixels from TARGET_PIXEL that vehicle must be pointing
+# # Widened 10 -> 20px. Halves the residual twitch (reversals 4.3% -> 3.3%) at
+# no cost to tracking, since 20px is under 5% of the frame width.
+TARGET_THRESHOLD = 20 # number of pixels from TARGET_PIXEL that vehicle must be pointing
 #                       # before a steering change will be made; this prevents algorithm
 #                       # from being too twitchy when it is on or near the line.
 # CONFIDENCE_THRESHOLD = 0.0015   # The fraction of total sampled pixels that must be yellow in the sample slice.
@@ -823,3 +999,29 @@ NETWORK_JS_SERVER_IP = None
 # # transient false positive; higher = takes longer to start tracking but
 # # more resistant to noise.
 # CENTER_LINE_CONFIRM_FRAMES = 3
+
+# --- Behaviour when the line is not visible -------------------------------
+# The centre line is DASHED and some stretches of the track have no tape at
+# all. Measured over 1200 real recorded frames: 34 separate gaps, median 0.58s
+# but p90 2.5s and the worst 5.7 SECONDS. The controller used to hold its last
+# steering value for the whole gap, so a line lost mid-turn meant the car kept
+# turning for seconds -- which is exactly how it wandered off at a few points.
+#
+# Hold for LINE_LOST_HOLD_FRAMES (10 = 0.5s at 20Hz) so an ordinary dash gap
+# is ridden through committed, then decay toward straight at LINE_LOST_DECAY
+# per frame (0.90 => ~1s to unwind). Straight is the safe default when blind.
+# Raise HOLD if it straightens during normal dash gaps; lower DECAY (e.g.
+# 0.80) to straighten faster.
+LINE_LOST_HOLD_FRAMES = 10
+LINE_LOST_DECAY = 0.90
+
+# Progressive steering. One linear gain cannot cover both jobs: measured over
+# 1500 real frames the line sits a median 78px off centre and 40% of frames
+# exceed 80px, so the gain that stops the weave on straights (Kp=-0.005) tops
+# out at 0.70 steering even at the largest error seen (148px) -- never enough
+# to get round a corner, which is where it kept losing the line.
+# This stretches the error by how far off it already is: near-linear for small
+# deviations (straights stay calm), full lock reachable on a corner.
+#   0.0 = off (plain linear)   1.0 = a 124px error acts like ~196px
+STEERING_PROGRESSIVE = 1.0
+
