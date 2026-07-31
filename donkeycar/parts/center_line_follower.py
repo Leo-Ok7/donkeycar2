@@ -96,6 +96,12 @@ DEFAULT_EDGE_MIN_HEIGHT_FRACTION = 0.60
 # Shadow rejection is handled by DEFAULT_EDGE_MIN_HEIGHT_FRACTION instead.
 DEFAULT_EDGE_MIN_SOLIDITY = 0.0
 
+# Minimum elongation (long side / short side of the min-area rect) for the
+# boundary edge. Rejects gravel/pebble beds, which pass the height gate
+# because they fill the whole ROI but are blobby rather than line-like.
+# Measured: real edge 8.6-13.4, pebble bed 2.3-3.2.
+DEFAULT_EDGE_MIN_ELONGATION = 5.0
+
 # Tracking continuity: real tape moves smoothly frame-to-frame as the car
 # drives; a spurious background match (a rock, a glint, a piece of
 # architecture that happens to pass the color/contrast+shape gates) shows
@@ -239,6 +245,8 @@ class CenterLineFollower:
         self.edge_tophat_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_edge, k_edge))
         self.edge_contrast_threshold = getattr(cfg, 'CENTER_LINE_EDGE_CONTRAST_THRESHOLD', DEFAULT_EDGE_CONTRAST_THRESHOLD)
         self.edge_min_area_fraction = getattr(cfg, 'CENTER_LINE_EDGE_MIN_AREA_FRACTION', DEFAULT_EDGE_MIN_AREA_FRACTION)
+        self.edge_min_elongation = max(0.0, float(getattr(
+            cfg, 'CENTER_LINE_EDGE_MIN_ELONGATION', DEFAULT_EDGE_MIN_ELONGATION)))
         self.edge_min_solidity = clamp(float(getattr(
             cfg, 'CENTER_LINE_EDGE_MIN_SOLIDITY', DEFAULT_EDGE_MIN_SOLIDITY)), 0.0, 1.0)
         self.edge_min_height_fraction = clamp(float(getattr(
@@ -342,7 +350,7 @@ class CenterLineFollower:
         return mask
 
     def _find_blob(self, mask, min_area_fraction, x_range=None, last_known_cx=None,
-                   min_height_fraction=0.0, min_solidity=None):
+                   min_height_fraction=0.0, min_solidity=None, min_elongation=0.0):
         """
         Returns (cx, cy, confidence) in ROI-local coordinates (cx is also
         full-frame-x, since the ROI spans the full image width) for
@@ -386,6 +394,21 @@ class CenterLineFollower:
             # dashed center line is short by design and must not be gated.
             if min_height_fraction > 0.0 and bh < min_height_fraction * mask.shape[0]:
                 continue
+            # Elongation gate (edge only). Boundary tape is one long thin
+            # stripe; a gravel/pebble bed shatters into a field of roughly
+            # round clumps that the CLOSE step fuses into fat blobs. Measured
+            # on real tub frames:
+            #     real white edge : elongation 8.6 and 13.4  (1 blob,  ~600px)
+            #     pebble bed      : elongation 2.3 and  3.2  (19-23 blobs, 4000-5900px)
+            # minAreaRect is used rather than the axis-aligned box so a
+            # diagonal line still measures as elongated. This is complementary
+            # to min_height_fraction: height rejects shadows (horizontal
+            # bands), elongation rejects gravel (fills the ROI but is blobby).
+            if min_elongation > 0.0:
+                (_, _), (rw, rh), _ = cv2.minAreaRect(c)
+                shorter = max(min(rw, rh), 1.0)
+                if (max(rw, rh) / shorter) < min_elongation:
+                    continue
             if bw * bh > 0 and area / (bw * bh) > self.max_fill_ratio:
                 continue  # too blob-like to be a thin tape stripe
             # Solidity floor, overridable per caller. The default (tuned for
@@ -432,7 +455,8 @@ class CenterLineFollower:
         return self._find_blob(mask, self.edge_min_area_fraction, x_range=x_range,
                                last_known_cx=self.last_edge_cx,
                                min_height_fraction=self.edge_min_height_fraction,
-                               min_solidity=self.edge_min_solidity)
+                               min_solidity=self.edge_min_solidity,
+                               min_elongation=self.edge_min_elongation)
 
     def _confirm(self, found, confirmed_cx_attr, pending_cx_attr, pending_count_attr):
         """
