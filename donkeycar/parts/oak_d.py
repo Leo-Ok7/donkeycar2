@@ -16,6 +16,7 @@ Notes:
 """
 
 import argparse
+import logging
 import string
 import time
 import sys
@@ -27,8 +28,39 @@ from depthai import Pipeline, DataOutputQueue, ImgFrame, ImgDetections, ImgDetec
 from numpy import ndarray
 from typing import List
 
-WIDTH = 640
-HEIGHT = 480
+logger = logging.getLogger(__name__)
+
+WIDTH = 426
+HEIGHT = 240
+
+# Steady capture rate. Match this to cfg.DRIVE_LOOP_HZ so the vehicle loop gets
+# roughly one fresh frame per tick. Full-sensor ISP readout limits the ceiling,
+# and depthai will clamp (with a warning) if the sensor cannot sustain it.
+CAMERA_FPS = 20
+
+# --- Full-FOV capture ---------------------------------------------------------
+# The stock part used the `video` output at THE_1080_P, which is hard-cropped to
+# 16:9 no matter what resolution is requested. That crop throws away the bottom
+# of the sensor's native 4:3 field of view -- exactly the near-ground strip a
+# line follower needs -- so the car loses the line on turns.
+#
+# Instead we capture the whole sensor and let the on-device ISP scale it down,
+# then squash (never re-crop) to WIDTH x HEIGHT in _poll(). Squashing keeps the
+# recovered FOV; re-cropping to 16:9 would silently undo the whole fix.
+#
+# Sensor resolution is board-specific and a mismatch makes depthai throw when the
+# device is created, so we try candidates in order and use the first that works:
+#   THE_12_MP -> OAK-D      / IMX378, 4056x3040; 1/6 -> ~676x506
+#   THE_13_MP -> OAK-D-Lite / IMX214, 4208x3120; 1/6 -> ~701x520
+# The 1/4 entries are lower-risk fallbacks: some firmware rejects ISP scale
+# fractions that do not divide the sensor evenly. All candidates are 4:3 modes --
+# do not add a 16:9 mode (e.g. THE_4_K) here, as that reintroduces the crop.
+ISP_CAPTURE_CANDIDATES = (
+    (depthai.ColorCameraProperties.SensorResolution.THE_12_MP, 1, 6),
+    (depthai.ColorCameraProperties.SensorResolution.THE_13_MP, 1, 6),
+    (depthai.ColorCameraProperties.SensorResolution.THE_12_MP, 1, 4),
+    (depthai.ColorCameraProperties.SensorResolution.THE_13_MP, 1, 4),
+)
 
 
 class OakD(object):
@@ -47,34 +79,36 @@ class OakD(object):
         enable_rgb=True,
         enable_depth=True,
         device_id=None,
+        exposure_compensation=0,
     ):
         self.device_id = device_id  # "18443010C1E4681200" # serial number of device to use|None to use default|"list" to list devices and exit
         self.enable_rgb = enable_rgb
         self.enable_depth = enable_depth
+        # Auto-exposure bias; see setup_rgb_camera(). 0 = leave depthai alone.
+        self.exposure_compensation = exposure_compensation
 
+        # target output size; frames are resized to this in _poll()
         self.width = width
         self.height = height
 
-        # TODO: Accommodate using device native resolutions to avoid resizing.
-        self.resize = (width != WIDTH) or (height != HEIGHT)
-        if self.resize:
-            print(
-                f"The output images will be resized from {(WIDTH, HEIGHT)} to {(self.width, self.height)} using OpenCV. Device resolution in use is 640x480."
-            )
-
+        self.rgb_queue = None
+        self.depth_queue = None
+        self.oak_d_device = None
         self.pipeline = None
+
         if self.enable_depth or self.enable_rgb:
-            self.pipeline = depthai.Pipeline()
-
             device_info = self.get_depthai_device_info(device_id)
+            self._open_device(device_info)
 
-            if self.enable_depth:
-                self.setup_depth_camera(WIDTH, HEIGHT)
-
+            # create the output queues once, not on every frame
             if self.enable_rgb:
-                self.setup_rgb_camera(WIDTH, HEIGHT)
-
-            self.oak_d_device = depthai.Device(self.pipeline, device_info)
+                self.rgb_queue = self.oak_d_device.getOutputQueue(
+                    "rgb", maxSize=1, blocking=False
+                )
+            if self.enable_depth:
+                self.depth_queue = self.oak_d_device.getOutputQueue(
+                    "depth", maxSize=1, blocking=False
+                )
 
         # initialize frame state
         self.color_image = None
@@ -116,7 +150,113 @@ class OakD(object):
                 except:
                     raise ValueError(f"Incorrect value supplied: {val}")
 
-    def setup_depth_camera(self, width, height):
+    def _open_device(self, device_info):
+        """
+        Build the pipeline and open the camera.
+
+        The sensor resolution a board accepts is board-specific, and asking for
+        an unsupported one makes depthai raise when the device is created -- not
+        when it is configured. So the whole build-and-open has to be retried per
+        candidate rather than just the setResolution() call.
+
+        On success self.pipeline and self.oak_d_device are set and the winning
+        combination is logged. If every candidate fails we raise with the full
+        list of what was tried, so a failure is loud and diagnosable instead of
+        a bare depthai error.
+        """
+        if not self.enable_rgb:
+            # No color camera means no sensor-resolution choice to make.
+            self.pipeline = depthai.Pipeline()
+            self.setup_depth_camera()
+            self.oak_d_device = depthai.Device(self.pipeline, device_info)
+            return
+
+        failures = []
+        for resolution, scale_num, scale_den in ISP_CAPTURE_CANDIDATES:
+            try:
+                self.pipeline = depthai.Pipeline()
+                if self.enable_depth:
+                    self.setup_depth_camera()
+                self.setup_rgb_camera(resolution, scale_num, scale_den)
+                self.oak_d_device = depthai.Device(self.pipeline, device_info)
+            except Exception as error:
+                failures.append(f"  {resolution} @ {scale_num}/{scale_den}: {error}")
+                self.pipeline = None
+                continue
+
+            # Opening the device is NOT enough to prove the mode is usable: the
+            # ISP size setIspScale() lands on can be one getCvFrame() cannot
+            # convert. THE_12_MP @ 1/6 on this hardware yields 676x507, and the
+            # odd height fails NV12->BGR:
+            #   (-215:Assertion failed) sz.width % 2 == 0 && sz.height % 3 == 0
+            # That threw in the camera THREAD on the first frame, long after
+            # this function had already reported success -- so the candidate has
+            # to be validated by actually converting a frame here, while we can
+            # still fall through to the next one.
+            usable, why = self._validate_rgb_capture()
+            if not usable:
+                failures.append(
+                    f"  {resolution} @ {scale_num}/{scale_den}: opened but "
+                    f"unusable ({why})"
+                )
+                try:
+                    self.oak_d_device.close()
+                except Exception:
+                    pass
+                self.oak_d_device = None
+                self.pipeline = None
+                continue
+
+            logger.info(
+                f"OAK-D capturing at {resolution} with ISP scale "
+                f"{scale_num}/{scale_den}, delivered as {self.width}x{self.height}"
+            )
+            return
+
+        raise RuntimeError(
+            "Could not open the OAK-D with any known full-FOV capture mode.\n"
+            "Tried:\n" + "\n".join(failures)
+        )
+
+    def _validate_rgb_capture(self, timeout_s=8.0):
+        """
+        Pull one real RGB frame and convert it, to prove the chosen capture mode
+        actually works end to end.
+
+        Returns (True, "") if a frame arrived and getCvFrame() succeeded, else
+        (False, reason). Never raises -- a candidate that fails here is just
+        rejected so _open_device() can try the next one.
+        """
+        try:
+            queue = self.oak_d_device.getOutputQueue(
+                "rgb", maxSize=1, blocking=False
+            )
+        except Exception as error:
+            return False, f"no rgb queue: {error}"
+
+        deadline = time.time() + timeout_s
+        frame = None
+        while time.time() < deadline:
+            try:
+                frame = queue.tryGet()
+            except Exception as error:
+                return False, f"queue read failed: {error}"
+            if frame is not None:
+                break
+            time.sleep(0.02)
+
+        if frame is None:
+            return False, f"no frame within {timeout_s:.0f}s"
+
+        size = f"{frame.getWidth()}x{frame.getHeight()}"
+        try:
+            frame.getCvFrame()
+        except Exception as error:
+            # Most likely an ISP size NV12->BGR cannot handle (odd height).
+            return False, f"ISP {size}, getCvFrame failed: {str(error)[:80]}"
+        return True, ""
+
+    def setup_depth_camera(self):
         # Set up left and right cameras
         mono_left = self.get_mono_camera(self.pipeline, True)
         mono_right = self.get_mono_camera(self.pipeline, False)
@@ -132,20 +272,47 @@ class OakD(object):
 
         stereo.depth.link(xout_depth.input)
 
-    def setup_rgb_camera(self, width, height):
+    def setup_rgb_camera(self, resolution, scale_numerator, scale_denominator):
         cam_rgb = self.pipeline.create(depthai.node.ColorCamera)
 
-        res = depthai.ColorCameraProperties.SensorResolution.THE_1080_P
+        # Capture the whole sensor and let the ISP scale it down, rather than
+        # using a 16:9 sensor mode which crops away the near-ground FOV.
+        cam_rgb.setResolution(resolution)
+        cam_rgb.setIspScale(scale_numerator, scale_denominator)
+        cam_rgb.setFps(CAMERA_FPS)
 
-        cam_rgb.setResolution(res)
-        # Set preview size to match model input
-        cam_rgb.setPreviewSize(self.image_w, self.image_h)
-        cam_rgb.setInterleaved(False)
+        # Auto-exposure bias. Default 0 leaves depthai's behavior untouched.
+        #
+        # Why this exists: auto-exposure meters for the whole frame, and on
+        # bright sunlit pavement it drives the image to the top of the range.
+        # Measured on a real sunlit frame here: mean brightness 230/255 with
+        # HALF the pixels (49.8%) clipped at pure white. Clipped pixels have
+        # no color left -- saturation collapses toward 0 -- so yellow tape
+        # washes out to white and fails any saturation floor downstream, with
+        # no error to explain it.
+        #
+        # Negative values bias the exposure darker. Measured on this camera:
+        #     comp   mean   clipped>250   mean saturation
+        #      0     127       4.0%           37.8
+        #     -2      89       0.4%           50.2
+        #     -4      54       0.0%           60.7
+        #     -6      34       0.0%           67.1
+        # Saturation -- the thing color thresholding depends on -- improves
+        # substantially. But the right value is scene-dependent (the same
+        # comp=0 gave 4% clipping in shade and 50% in direct sun), so this
+        # stays opt-in rather than being given a nonzero default, and it
+        # should be chosen against frames that actually contain the tape.
+        if self.exposure_compensation:
+            cam_rgb.initialControl.setAutoExposureCompensation(
+                int(self.exposure_compensation))
+            logger.info("OAK-D auto-exposure compensation: %+d",
+                        int(self.exposure_compensation))
 
         xout_rgb = self.pipeline.create(depthai.node.XLinkOut)
         xout_rgb.setStreamName("rgb")
 
-        cam_rgb.video.link(xout_rgb.input)
+        # isp (not video) is the full-FOV output.
+        cam_rgb.isp.link(xout_rgb.input)
 
     def get_mono_camera(self, pipeline: Pipeline, is_left: bool):
         # Configure mono camera
@@ -181,47 +348,40 @@ class OakD(object):
         # Convert to OpenCV format
         return new_frame.getCvFrame()
 
+    def _fit_to_output_size(self, frame):
+        """
+        Squash a frame to exactly (self.width, self.height).
+
+        setIspScale() only hits approximate fractions -- a 12MP sensor at 1/6 is
+        about 676x506 -- so this pins the frame to the size manage.py expects.
+
+        This deliberately RESIZES rather than crops. The ISP frame is ~4:3 and
+        the target is 16:9, so it gets horizontally squashed. That is the point:
+        cropping back toward 16:9 would discard the near-ground field of view
+        this whole capture path exists to recover.
+        """
+        if frame is None:
+            return None
+        if frame.shape[1] != self.width or frame.shape[0] != self.height:
+            frame = cv2.resize(
+                frame, (self.width, self.height), interpolation=cv2.INTER_NEAREST
+            )
+        return frame
+
     def _poll(self):
-        last_time = self.frame_time
         self.frame_time = time.time() - self.start_time
         self.frame_count += 1
 
         #
         # convert camera frames to images
+        # NOTE: only read a queue if its feature is enabled -- reading the depth
+        # queue when depth is off blocks forever / throws.
         #
-        if self.enable_rgb or self.enable_depth:
+        if self.enable_rgb:
+            self.color_image = self._fit_to_output_size(self.get_frame(self.rgb_queue))
 
-            self.depth_queue: DataOutputQueue = self.oak_d_device.getOutputQueue(
-                name="depth", maxSize=1, blocking=False
-            )
-            self.rgb_queue: DataOutputQueue = self.oak_d_device.getOutputQueue(
-                "rgb", maxSize=1, blocking=False
-            )
-
-            depth_frame = self.get_frame(self.depth_queue)
-            rgb_frame = self.get_frame(self.rgb_queue)
-
-            self.depth_image = depth_frame
-            self.color_image = rgb_frame
-
-        if self.resize:
-            if self.width != WIDTH or self.height != HEIGHT:
-                import cv2
-
-                self.color_image = (
-                    cv2.resize(
-                        self.color_image, (self.width, self.height), cv2.INTER_NEAREST
-                    )
-                    if self.enable_rgb
-                    else None
-                )
-                self.depth_image = (
-                    cv2.resize(
-                        self.depth_image, (self.width, self.height), cv2.INTER_NEAREST
-                    )
-                    if self.enable_depth
-                    else None
-                )
+        if self.enable_depth:
+            self.depth_image = self._fit_to_output_size(self.get_frame(self.depth_queue))
 
     def update(self):
         """
@@ -253,7 +413,9 @@ class OakD(object):
         time.sleep(2)  # give thread enough time to shutdown
 
         # done running
-        self.oak_d_device.close()
+        if self.oak_d_device is not None:
+            self.oak_d_device.close()
+            self.oak_d_device = None
 
 
 #
@@ -293,15 +455,15 @@ if __name__ == "__main__":
 
     device_id = args.device_id  # getMxId
 
-    width = 640
-    height = 480
+    width = WIDTH
+    height = HEIGHT
     channels = 3
 
     profile_frames = 0  # set to non-zero to calculate the max frame rate using given number of frames
 
     camera = None
     try:
-        camera = OakDLite(
+        camera = OakD(
             width=width,
             height=height,
             enable_rgb=enable_rgb,

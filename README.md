@@ -81,3 +81,122 @@ V.start(rate_hz=10)
 
 See [home page](http://donkeycar.com), [docs](http://docs.donkeycar.com)
 or join the [Discord server](http://www.donkeycar.com/community.html) to learn more.
+
+## Line following and lane following (this branch)
+
+Classical-CV line following and lane following for a DonkeyCar with a Luxonis
+OAK-D camera. No neural nets, no training, no simulator — everything is tuned
+through named config constants at the track.
+
+**Start here: [docs/lane_following.md](docs/lane_following.md)** for the concepts,
+the camera patch, run instructions and the tuning guide.
+
+### Quick reference
+
+```bash
+# Re-apply the OAK-D full-FOV camera patch (needed after any environment rebuild)
+~/env/bin/python scripts/patch_oak_d.py
+
+# Confirm the camera streams 426x240 with the recovered field of view,
+# and settle whether frames are BGR or RGB
+python scripts/oakd_color_check.py
+
+# Prove manage.py still launches and stays manually drivable, without hardware
+python scripts/preflight_lane_following.py --controller LaneFollowingController --web
+
+# Check the CV logic (foliage rejection, plausibility gate, lost-line states)
+pytest tests/test_lane_following.py tests/test_lane_following_web.py
+
+# Confirm line following has not regressed
+python scripts/replay_frames.py --check tests/data/line_golden.json
+
+# Drive
+python manage.py drive
+#   http://<hostname>.local:8887  donkeycar page - engage autopilot ("local") here
+#   http://<hostname>.local:8891  toggle page - MODE, LANE, DEBUG  (LANE_WEB_ENABLE=True)
+```
+
+### If foliage leaks into the yellow mask
+
+Tune in this order (all in `donkeycar/parts/lane_following/params.py`, overridable
+in `myconfig.py`):
+
+1. **lower** `YELLOW_HSV_HIGH`'s hue ceiling (default `33` — foliage green starts ~40)
+2. **raise** `YELLOW_HSV_LOW`'s saturation floor (default `110` — foliage is pale)
+3. **raise** `ROI_TOP_FRAC` (default `0.55`) to crop more horizon away
+
+### Layout
+
+| Path | Purpose |
+|---|---|
+| `donkeycar/parts/lane_following/params.py` | every tunable, in one labeled block |
+| `donkeycar/parts/lane_following/vision.py` | ROI, HSV masking, blob filtering (foliage defenses 1–3) |
+| `donkeycar/parts/lane_following/control.py` | plausibility gate, steering, hold-heading (defenses 4–5) |
+| `donkeycar/parts/lane_following/strategies.py` | line following, lane following, lane model |
+| `donkeycar/parts/lane_following/controller.py` | the donkeycar Part and mode switching |
+| `donkeycar/parts/lane_following/web.py` | the mode/lane toggle page |
+| `donkeycar/parts/lane_following/overlay.py` | the debug overlay |
+| `donkeycar/parts/line_follower.py` | centroid-tracking line follower (steering-loop rewrite, see Development process below) |
+| `donkeycar/parts/oak_d.py` | patched OAK-D camera part (full-FOV `isp` stream, auto-exposure) |
+
+---
+
+# DSC190 Final Project — Team 10
+
+**UCSD DSC190, Summer Session I 2026 — Track 2: Agentic Development, New DonkeyCar Capabilities**
+
+**Team:** Leo Okdemir (HDSI) · Talal Jeddawi (CSE)
+
+This is our team's final project for Track 2 of the DonkeyCar course: using an
+AI coding agent (Claude) to iteratively build new autonomous behaviors on a
+physical DonkeyCar, following a `mission → agent writes code → test on the
+track → feedback → agent revises` loop. Everything above this line is the
+line-following / lane-following project itself, built on top of the
+[autorope/donkeycar](https://github.com/autorope/donkeycar) framework
+(original project README further up).
+
+## Mission progress
+
+| Mission stage | Status | Notes |
+|---|---|---|
+| 1. Line following | ✅ Working | Follows a single strip of yellow tape; centroid tracking with a "hold last heading" fallback when the line is briefly lost. |
+| 2. Lane following | ✅ Working | Upgrade of stage 1 — drives a chosen lane between two yellow boundaries and a discontinuous center divider; switch modes live from a web toggle page. |
+| 3. Two-way road navigation | ⏳ Not reached | We ran out of runway before starting oncoming-robot detection/avoidance. Our `half-lane-following` branch (drive-in-your-half-of-the-road logic, described below) was exploratory groundwork toward this stage but was superseded by the lane-following approach documented above. |
+
+## Development process (the agentic loop)
+
+Per the assignment, we used Claude as a coding agent throughout: give it a
+mission, let it write the CV/control code, test on the car, and feed back what
+broke. We restarted the approach more than once before landing on what's in
+this branch. Rough timeline, in order:
+
+1. **`center_line_follower.py`, first pass** — initial classical-CV line
+   follower. Worked in principle but wasn't robust to real track lighting.
+2. **Half-lane following (`half-lane-following` branch)** — pivoted to having
+   the car hug one half of the road (LEFT/RIGHT of a boundary edge), aimed at
+   eventually supporting two-way traffic. Each track test surfaced a new false
+   positive the agent then fixed: BGR/RGB channel mixup, shadows read as fake
+   edges, gravel/pebbles read as fake edges, and daytime lighting breaking
+   detection entirely. This branch got the detection robust but we decided the
+   boundary-hugging strategy wasn't the right foundation for lane following.
+3. **Restart on `LL-Following`** — rebuilt line following from scratch with a
+   cleaner architecture (`donkeycar/parts/lane_following/`). First real-track
+   test found the OAK-D camera part was hard-cropping away the near-ground
+   strip the line follower needed on turns ("Oakd fix") — the agent patched
+   `oak_d.py` to stream the full-FOV `isp` output instead of the cropped
+   `video` output.
+4. **`LL-Following-2` (this branch)** — feedback-driven hardening of the
+   above: an OAK-D validation step that opens the camera *and* pulls a real
+   frame (an earlier check only confirmed the device opened, which had been
+   masking failures), optional auto-exposure compensation, the lane-following
+   mode plus its web toggle page, and finally a steering-loop rewrite
+   (centroid tracking, centered target) after track testing showed the car
+   drifting off-center.
+
+## Acknowledgments
+
+Built on top of [autorope/donkeycar](https://github.com/autorope/donkeycar),
+an open-source self-driving library for Python — see the original project
+README above, or [docs.donkeycar.com](http://docs.donkeycar.com), for
+background on the Vehicle/Part/template architecture we built these parts
+against.

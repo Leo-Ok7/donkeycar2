@@ -30,8 +30,8 @@ MAX_LOOPS = None        # the vehicle loop can abort after this many iterations,
 #
 # CAMERA configuration
 #
-CAMERA_TYPE = "OAKD"    # (PICAM|WEBCAM|CVCAM|CSIC|V4L|D435|OAKD|MOCK|IMAGE_LIST)
-IMAGE_W = 426
+CAMERA_TYPE = "PICAM"   # (PICAM|WEBCAM|CVCAM|CSIC|V4L|D435|OAKD|MOCK|IMAGE_LIST)
+IMAGE_W = 320
 IMAGE_H = 240
 IMAGE_DEPTH = 3         # default RGB=3, make 1 for mono
 CAMERA_FRAMERATE = DRIVE_LOOP_HZ
@@ -44,16 +44,6 @@ BGR2RGB = False  # true to convert from BRG format to RGB format; requires openc
 
 # For IMAGE_LIST camera
 PATH_MASK = "~/mycar/data/tub_1_20-03-12/*.jpg"
-
-#
-# Luxonis OAK-D camera
-# NOTE: these keys are REQUIRED when CAMERA_TYPE is "OAKD". add_camera() reads
-# them directly, so a missing key is an AttributeError at launch.
-#
-OAKD_RGB = True     # True to capture RGB image
-OAKD_DEPTH = False  # depth is unused by line/lane following and costs Pi CPU
-                    # and USB bandwidth, so it is off. See docs/lane_following.md
-OAKD_ID = None      # serial number of camera, or None to auto-detect
 
 
 #
@@ -563,16 +553,8 @@ FPS_DEBUG_INTERVAL = 10    # the interval in seconds for printing the frequency 
 # computer vision template
 #
 # configure which part is used as the autopilot - change to use your own autopilot
-#
-# Line/lane following (this branch) -- see docs/lane_following.md
-#   PassThroughController   step 1: outputs zeros, proves the wiring is safe
-#   LaneFollowingController step 2+: the real line/lane following pipeline
-CV_CONTROLLER_MODULE = "donkeycar.parts.lane_following.controller"
-CV_CONTROLLER_CLASS = "PassThroughController"
-#
-# The stock donkeycar CV autopilot, for reference:
-#   CV_CONTROLLER_MODULE = "donkeycar.parts.line_follower"
-#   CV_CONTROLLER_CLASS = "LineFollower"
+CV_CONTROLLER_MODULE = "donkeycar.parts.line_follower"
+CV_CONTROLLER_CLASS = "LineFollower"
 CV_CONTROLLER_INPUTS = ['cam/image_array']
 CV_CONTROLLER_OUTPUTS = ['pilot/steering', 'pilot/throttle', 'cv/image_array']
 CV_CONTROLLER_CONDITION = "run_pilot"
@@ -631,27 +613,142 @@ DEC_PID_D_BTN = None            # button to change PID 'D' constant by -PID_D_DE
 INC_PID_P_BTN = "R2"            # button to change PID 'P' constant by PID_P_DELTA
 DEC_PID_P_BTN = "L2"            # button to change PID 'P' constant by -PID_P_DELTA
 
+#
+# CenterLineFollower - classical-CV follower for intermittent greenish-blue/
+# light-blue center tape. Also supports half-lane mode (CENTER_LINE_LANE_MODE
+# = "left"/"right"), which additionally tracks the solid white boundary tape
+# on that side so the car lane-keeps within half the track instead of
+# needing to straddle its full width -- see the CENTER_LINE_EDGE_*/
+# CENTER_LINE_HALF_LANE_* group further below. See
+# donkeycar/parts/center_line_follower.py and the companion
+# center_line_follower.md for the full pipeline write-up.
+# None of these are required here -- CenterLineFollower falls back to the
+# DEFAULT_* constants at the top of its own file if a name below isn't set.
+# To actually drive with this Part instead of the stock LineFollower, also
+# set in myconfig.py:
+#   CV_CONTROLLER_MODULE = "donkeycar.parts.center_line_follower"
+#   CV_CONTROLLER_CLASS = "CenterLineFollower"
+# NOTE: PID_P/PID_I/PID_D above must stay defined even when using
+# CenterLineFollower -- cv_control.py constructs a PID from them
+# unconditionally before the CV controller is even selected.  CenterLineFollower
+# itself ignores that PID object and implements its own steering control below.
+#
 
-#
-# LINE / LANE FOLLOWING (this branch) - see docs/lane_following.md
-#
-# The full set of tunables, with comments explaining each one, lives in
-#   donkeycar/parts/lane_following/params.py
-# Any of those names can be overridden here or in myconfig.py using the exact
-# same name. Anything not mentioned uses the default from params.py, so this
-# section can never go stale in a way that breaks launch.
-#
-# The handful most likely to need changing at the track:
-#
-# CAMERA_COLOR_ORDER = "BGR"      # run scripts/oakd_color_check.py to confirm
-# YELLOW_HSV_HIGH = (33, 255, 255)  # LOWER the hue (33) first if foliage leaks in
-# YELLOW_HSV_LOW = (20, 110, 90)    # then RAISE the saturation floor (110)
-# ROI_TOP_FRAC = 0.55             # raise to crop more horizon/foliage away
-# STEERING_KP = 0.85              # raise for sharper steering; too high oscillates
-# THROTTLE_FORWARD = 0.18         # constant cruise throttle - start low
-# HALF_LANE_WIDTH_FRAC = 0.18     # lane mode: measure from a debug frame
+# CenterLineFollower - region of interest (a tall horizontal band, not a thin
+# slice, so a dash fragment is likely to intersect it even with gaps in the tape)
+CENTER_LINE_ROI_Y_TOP = 130      # top row (pixels from image top) of the scan band
+CENTER_LINE_ROI_Y_BOTTOM = 230   # bottom row; kept short of IMAGE_H to avoid the chassis/bumper
 
-LANE_WEB_ENABLE = False  # True to serve the mode/lane toggle page (step 4)
-LANE_WEB_PORT = 8891     # the donkeycar web controller already uses 8887
-DEBUG_OVERLAY = False    # True to draw the CV masks and centroid on the feed
+# CenterLineFollower - HSV color threshold for the greenish-blue/teal tape
+# (opencv HSV hue value is 0..179, saturation and value are both 0..255).
+# Saturation (the 2nd number) is what actually separates the tape from the
+# low-saturation white boundary tape/track floor -- raise it first if the
+# mask is picking up white. Retune both of these before anything else when
+# moving from sim to the real camera.
+CENTER_LINE_COLOR_LOW = (75, 80, 40)
+CENTER_LINE_COLOR_HIGH = (130, 255, 255)
 
+# CenterLineFollower - morphological cleanup (open then close) kernel size, in px
+CENTER_LINE_MORPH_KERNEL = 5
+
+# CenterLineFollower - reject contours smaller than this fraction of the ROI area
+CENTER_LINE_MIN_AREA_FRACTION = 0.005
+
+# CenterLineFollower - shape filters, applied to both the center dash and
+# (in half-lane mode) the edge search. MAX_FILL_RATIO rejects a contour
+# whose area fills more than this fraction of its own bounding box -- real
+# tape is thin/elongated (measured ~0.43-0.59), a solid background blob is
+# not (measured ~0.84 on a real false-positive). MIN_SOLIDITY rejects a
+# contour whose area/convex-hull-area is below this -- real tape is a
+# smooth, nearly-convex stripe; real shrub/foliage contours measured
+# ~0.56-0.71 on this track (comfortably below the 0.85 floor) since they
+# survive this pipeline's morphological cleanup as one larger, genuinely
+# irregular shape, not a compact blob fill_ratio alone would catch.
+CENTER_LINE_MAX_FILL_RATIO = 0.65
+CENTER_LINE_MIN_SOLIDITY = 0.85
+
+# CenterLineFollower - target horizontal pixel for the tape centroid.
+# None means "use the geometric center of the frame" (width // 2) -- the
+# correct default for a *center*-line follower. Override only if the camera
+# isn't physically centered on the car.
+CENTER_LINE_TARGET_PIXEL = None
+
+# CenterLineFollower - steering control (proportional + optional derivative
+# on normalized error, roughly -1..1). Start by tuning STEER_KP alone with
+# STEER_KD at 0; see center_line_follower.md for the full tuning procedure.
+CENTER_LINE_STEER_KP = 0.8
+CENTER_LINE_STEER_KD = 0.0
+CENTER_LINE_ERROR_SMOOTHING_ALPHA = 0.5   # lower = smoother but more lag, higher = more jagged but faster
+
+# CenterLineFollower - throttle. Strictly constant while tracking; only
+# drops during an extended tape loss (see the gap-timing group below).
+CENTER_LINE_THROTTLE = 0.2          # always re-tune per-vehicle; start low on the real car
+CENTER_LINE_THROTTLE_LOST_MIN = 0.0 # throttle floor once LOST_TIME_SEC has elapsed
+
+# CenterLineFollower - how long to tolerate the tape being undetected before
+# reacting. A brief HOLD (tape still expected, e.g. a dash gap) keeps
+# steering and throttle unchanged; past LOST_TIME_SEC the car ramps throttle
+# down to CENTER_LINE_THROTTLE_LOST_MIN and stops steering-blind. Measure
+# your track's longest dash gap and set these relative to how long it takes
+# to cross it at CENTER_LINE_THROTTLE.
+CENTER_LINE_HOLD_TIME_SEC = 0.5
+CENTER_LINE_LOST_TIME_SEC = 2.0
+
+# CenterLineFollower - half-lane mode. "center" (default) is the original
+# center-tape-only behavior. "left"/"right" additionally tracks the solid
+# white boundary tape on that side and steers the *midpoint* of the dash
+# and that edge toward the frame center, so the car stays within that half
+# of the track. There's no runtime toggle for this yet (see LaneMode's
+# docstring) -- set it here before starting the car.
+CENTER_LINE_LANE_MODE = "center"     # "left" | "center" | "right"
+
+# CenterLineFollower - the solid white edge tape (only used in "left"/
+# "right" mode) is detected by local contrast (a morphological top-hat),
+# not a fixed brightness threshold -- plain floor brightness swings too
+# widely across the scene (measured ~92-190 depending on shade/sun) to
+# separate from the tape with one global number, but the tape is
+# consistently ~55-60 V brighter than whatever floor is immediately next
+# to it. KERNEL_SIZE must be wider than the tape line itself (~1-4px) but
+# smaller than the scale lighting varies over; CONTRAST_THRESHOLD is how
+# much local brightness advantage counts as "found". See
+# center_line_follower.py's DEFAULT_EDGE_TOPHAT_KERNEL_SIZE comment for the
+# full reasoning and measured numbers.
+CENTER_LINE_EDGE_TOPHAT_KERNEL_SIZE = 21
+CENTER_LINE_EDGE_CONTRAST_THRESHOLD = 30
+
+# CenterLineFollower - reject edge contours smaller than this fraction of
+# the *half*-ROI area searched (left/right half, not the whole ROI).
+CENTER_LINE_EDGE_MIN_AREA_FRACTION = 0.003
+
+# CenterLineFollower - half-lane width tracking. HALF_LANE_WIDTH_PX is only
+# an initial guess (pixel distance between the dash and a side edge) used
+# before both have been seen together in the same frame, or during an
+# extended one-sided occlusion; it self-corrects via HALF_LANE_WIDTH_
+# SMOOTHING (0-1: higher adapts to a widening/narrowing track faster but
+# noisier) every frame both are visible.
+CENTER_LINE_HALF_LANE_WIDTH_PX = 150
+CENTER_LINE_HALF_LANE_WIDTH_SMOOTHING = 0.2
+
+# CenterLineFollower - tracking continuity for both the dash and edge
+# search. Real tape moves smoothly frame-to-frame; a spurious background
+# match (a rock, a glint, architecture that happens to pass the color/
+# contrast+shape gates) shows up at an inconsistent, unrelated position
+# instead -- so once something's been tracked, the closest candidate to
+# the last known position wins over just the largest blob, even if a
+# background false positive is larger. MAX_TRACK_JUMP_PX guards the case
+# where the real tape is genuinely gone and a background blob is the only
+# candidate: if even the closest one is further than this, it's treated as
+# not-found (gap tolerance handles it) instead of snapping onto it.
+CENTER_LINE_MAX_TRACK_JUMP_PX = 60
+
+# CenterLineFollower - frames of *consistent* position required before
+# trusting a brand-new lock (startup, or right after being fully lost --
+# see DEFAULT_CONFIRM_FRAMES's comment in center_line_follower.py). This is
+# what actually rejects background noise/pebbles/pavement texture that
+# passes the area+shape gates with similar confidence to real tape in a
+# single frame (measured ~0.02-0.03 for both on real track footage) --
+# MAX_TRACK_JUMP_PX alone can't help here since there's no prior position
+# yet to gate against. Lower = locks on faster but more exposed to a
+# transient false positive; higher = takes longer to start tracking but
+# more resistant to noise.
+CENTER_LINE_CONFIRM_FRAMES = 3

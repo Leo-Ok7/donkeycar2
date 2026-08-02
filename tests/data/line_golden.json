@@ -1,0 +1,785 @@
+{
+ "frame_count": 78,
+ "records": [
+  {
+   "frame": 0,
+   "steering": 0.0,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": null,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 1,
+   "steering": 0.0,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": null,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 2,
+   "steering": -0.001297,
+   "throttle": 0.17993,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 3,
+   "steering": -0.001751,
+   "throttle": 0.179905,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 4,
+   "steering": -0.00191,
+   "throttle": 0.179897,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 5,
+   "steering": -0.001965,
+   "throttle": 0.179894,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 6,
+   "steering": -0.001985,
+   "throttle": 0.179893,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 7,
+   "steering": -0.001992,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 8,
+   "steering": -0.001994,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 9,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 10,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 11,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 12,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 13,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 14,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 15,
+   "steering": -0.002007,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002369,
+   "line_x": 212.495,
+   "blob_count": 1,
+   "area_frac": 0.046405
+  },
+  {
+   "frame": 16,
+   "steering": -0.002,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 17,
+   "steering": -0.001997,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 18,
+   "steering": -0.001996,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 19,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 20,
+   "steering": -0.001995,
+   "throttle": 0.179892,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 21,
+   "steering": 0.029131,
+   "throttle": 0.178427,
+   "state": "tracking",
+   "offset": 0.053991,
+   "line_x": 224.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 22,
+   "steering": 0.073746,
+   "throttle": 0.176018,
+   "state": "tracking",
+   "offset": 0.115023,
+   "line_x": 237.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 23,
+   "steering": 0.123082,
+   "throttle": 0.173354,
+   "state": "tracking",
+   "offset": 0.176056,
+   "line_x": 250.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 24,
+   "steering": 0.174071,
+   "throttle": 0.1706,
+   "state": "tracking",
+   "offset": 0.237089,
+   "line_x": 263.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 25,
+   "steering": 0.223043,
+   "throttle": 0.167956,
+   "state": "tracking",
+   "offset": 0.293427,
+   "line_x": 275.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 26,
+   "steering": 0.273904,
+   "throttle": 0.165209,
+   "state": "tracking",
+   "offset": 0.35446,
+   "line_x": 288.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 27,
+   "steering": 0.325426,
+   "throttle": 0.162427,
+   "state": "tracking",
+   "offset": 0.415493,
+   "line_x": 301.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 28,
+   "steering": 0.377165,
+   "throttle": 0.159633,
+   "state": "tracking",
+   "offset": 0.476499,
+   "line_x": 314.494,
+   "blob_count": 1,
+   "area_frac": 0.046405
+  },
+  {
+   "frame": 29,
+   "steering": 0.429009,
+   "throttle": 0.156834,
+   "state": "tracking",
+   "offset": 0.537559,
+   "line_x": 327.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 30,
+   "steering": 0.478281,
+   "throttle": 0.154173,
+   "state": "tracking",
+   "offset": 0.593897,
+   "line_x": 339.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 31,
+   "steering": 0.529247,
+   "throttle": 0.151421,
+   "state": "tracking",
+   "offset": 0.65493,
+   "line_x": 352.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 32,
+   "steering": 0.569998,
+   "throttle": 0.14922,
+   "state": "tracking",
+   "offset": 0.696401,
+   "line_x": 361.333,
+   "blob_count": 4,
+   "area_frac": 0.021246
+  },
+  {
+   "frame": 33,
+   "steering": 0.584328,
+   "throttle": 0.148446,
+   "state": "tracking",
+   "offset": 0.696522,
+   "line_x": 361.359,
+   "blob_count": 4,
+   "area_frac": 0.021279
+  },
+  {
+   "frame": 34,
+   "steering": 0.589478,
+   "throttle": 0.148168,
+   "state": "tracking",
+   "offset": 0.696766,
+   "line_x": 361.411,
+   "blob_count": 4,
+   "area_frac": 0.021279
+  },
+  {
+   "frame": 35,
+   "steering": 0.591233,
+   "throttle": 0.148073,
+   "state": "tracking",
+   "offset": 0.696679,
+   "line_x": 361.393,
+   "blob_count": 4,
+   "area_frac": 0.021181
+  },
+  {
+   "frame": 36,
+   "steering": 0.59192,
+   "throttle": 0.148036,
+   "state": "tracking",
+   "offset": 0.696813,
+   "line_x": 361.421,
+   "blob_count": 4,
+   "area_frac": 0.021181
+  },
+  {
+   "frame": 37,
+   "steering": 0.59202,
+   "throttle": 0.148031,
+   "state": "tracking",
+   "offset": 0.696557,
+   "line_x": 361.367,
+   "blob_count": 4,
+   "area_frac": 0.021312
+  },
+  {
+   "frame": 38,
+   "steering": 0.592059,
+   "throttle": 0.148029,
+   "state": "tracking",
+   "offset": 0.696564,
+   "line_x": 361.368,
+   "blob_count": 4,
+   "area_frac": 0.021312
+  },
+  {
+   "frame": 39,
+   "steering": 0.592047,
+   "throttle": 0.148029,
+   "state": "tracking",
+   "offset": 0.696519,
+   "line_x": 361.359,
+   "blob_count": 4,
+   "area_frac": 0.021246
+  },
+  {
+   "frame": 40,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 41,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 42,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 43,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 44,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 45,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 46,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 47,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 48,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 49,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 50,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 51,
+   "steering": 0.592047,
+   "throttle": 0.108,
+   "state": "coasting",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 52,
+   "steering": 0.592047,
+   "throttle": 0.099,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 53,
+   "steering": 0.592047,
+   "throttle": 0.09,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 54,
+   "steering": 0.592047,
+   "throttle": 0.081,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 55,
+   "steering": 0.592047,
+   "throttle": 0.072,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 56,
+   "steering": 0.592047,
+   "throttle": 0.063,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 57,
+   "steering": 0.592047,
+   "throttle": 0.054,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 58,
+   "steering": 0.592047,
+   "throttle": 0.045,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 59,
+   "steering": 0.592047,
+   "throttle": 0.036,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 60,
+   "steering": 0.592047,
+   "throttle": 0.027,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 61,
+   "steering": 0.592047,
+   "throttle": 0.018,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 62,
+   "steering": 0.592047,
+   "throttle": 0.009,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 63,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "slowing",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 64,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 65,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 66,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 67,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 68,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 69,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 0,
+   "area_frac": 0.0
+  },
+  {
+   "frame": 70,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 71,
+   "steering": 0.592047,
+   "throttle": 0.0,
+   "state": "stopped",
+   "offset": 0.0,
+   "line_x": 361.359,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 72,
+   "steering": 0.20592,
+   "throttle": 0.16888,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 73,
+   "steering": 0.070775,
+   "throttle": 0.176178,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 74,
+   "steering": 0.023474,
+   "throttle": 0.178732,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 75,
+   "steering": 0.006919,
+   "throttle": 0.179626,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 76,
+   "steering": 0.001125,
+   "throttle": 0.179939,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  },
+  {
+   "frame": 77,
+   "steering": -0.000903,
+   "throttle": 0.179951,
+   "state": "tracking",
+   "offset": -0.002347,
+   "line_x": 212.5,
+   "blob_count": 1,
+   "area_frac": 0.046427
+  }
+ ]
+}
